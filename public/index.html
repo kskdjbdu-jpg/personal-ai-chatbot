@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>मेरा Personal AI</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        body { background: #121212; color: #fff; display: flex; flex-direction: column; height: 100vh; }
+        header { background: #1f1f1f; padding: 15px 20px; text-align: center; font-size: 1.2rem; font-weight: bold; color: #4caf50; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+        #chatbox { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 10px 14px; border-radius: 12px; max-width: 80%; line-height: 1.4; word-wrap: break-word; animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .user { background: #2e7d32; align-self: flex-end; }
+        .ai { background: #262626; align-self: flex-start; border: 1px solid #333; }
+        .error { background: #b71c1c; align-self: center; color: #fff; max-width: 90%; }
+        .loading { background: #262626; align-self: flex-start; border: 1px solid #333; font-style: italic; color: #999; }
+        .input-area { padding: 10px; background: #1f1f1f; display: flex; gap: 8px; border-top: 1px solid #333; }
+        input { flex: 1; padding: 12px; border-radius: 8px; border: none; outline: none; background: #2d2d2d; color: #fff; font-size: 1rem; }
+        input::placeholder { color: #666; }
+        button { padding: 12px 18px; border-radius: 8px; border: none; background: #4caf50; color: #fff; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+        button:hover { background: #45a049; }
+        button:disabled { background: #666; cursor: not-allowed; }
+        .clear-btn { background: #d32f2f; padding: 6px 12px; font-size: 0.8rem; }
+        .clear-btn:hover { background: #b71c1c; }
+        #chatbox::-webkit-scrollbar { width: 8px; }
+        #chatbox::-webkit-scrollbar-track { background: #1f1f1f; }
+        #chatbox::-webkit-scrollbar-thumb { background: #4caf50; border-radius: 4px; }
+        .timestamp { font-size: 0.75rem; color: #999; margin-top: 4px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <span>🤖 मेरा पर्सनल आज्ञाकारी AI</span>
+        <button class="clear-btn" onclick="clearHistory()">चैट मिटाएं</button>
+    </header>
+    
+    <div id="chatbox"></div>
+
+    <div class="input-area">
+        <input type="text" id="userInput" placeholder="यहाँ लिखें..." onkeypress="if(event.key === 'Enter') sendMessage()" autocomplete="off" />
+        <button id="sendBtn" onclick="sendMessage()">भेजें</button>
+    </div>
+
+    <script>
+        let chatHistory = JSON.parse(localStorage.getItem("ai_chat_history")) || [];
+        let isLoading = false;
+
+        // पेज लोड होते ही पुरानी चैट दिखाएं
+        window.onload = () => {
+            if (chatHistory.length === 0) {
+                appendMessage("प्��णाम मालिक! आदेश दीजिए, मैं आपकी क्या सेवा करूँ?", "ai");
+            } else {
+                chatHistory.forEach(item => {
+                    const sender = item.role === "user" ? "user" : "ai";
+                    appendMessage(item.parts[0].text, sender);
+                });
+            }
+        };
+
+        async function sendMessage() {
+            const input = document.getElementById("userInput");
+            const text = input.value.trim();
+            
+            if (!text || isLoading) return;
+
+            isLoading = true;
+            document.getElementById("sendBtn").disabled = true;
+
+            appendMessage(text, "user");
+            chatHistory.push({ role: "user", parts: [{ text: text }] });
+            saveHistory();
+            input.value = "";
+
+            const chatbox = document.getElementById("chatbox");
+            const loadingMsg = document.createElement("div");
+            loadingMsg.className = "msg loading";
+            loadingMsg.id = "loading";
+            loadingMsg.innerText = "सोच रहा हूँ...";
+            chatbox.appendChild(loadingMsg);
+            chatbox.scrollTop = chatbox.scrollHeight;
+
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        chatHistory: chatHistory
+                    })
+                });
+
+                const data = await response.json();
+
+                if (document.getElementById("loading")) {
+                    document.getElementById("loading").remove();
+                }
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Server error');
+                }
+
+                const reply = data.reply;
+                appendMessage(reply, "ai");
+
+                chatHistory.push({ role: "model", parts: [{ text: reply }] });
+                saveHistory();
+
+            } catch (err) {
+                if (document.getElementById("loading")) {
+                    document.getElementById("loading").remove();
+                }
+                appendMessage(`❌ एरर: ${err.message}`, "error");
+            } finally {
+                isLoading = false;
+                document.getElementById("sendBtn").disabled = false;
+                input.focus();
+            }
+        }
+
+        function appendMessage(text, sender) {
+            const chatbox = document.getElementById("chatbox");
+            const msg = document.createElement("div");
+            msg.className = `msg ${sender}`;
+            msg.innerText = text;
+            
+            // Add timestamp for debugging
+            const timestamp = document.createElement("div");
+            timestamp.className = "timestamp";
+            timestamp.innerText = new Date().toLocaleTimeString('hi-IN');
+            msg.appendChild(timestamp);
+            
+            chatbox.appendChild(msg);
+            chatbox.scrollTop = chatbox.scrollHeight;
+        }
+
+        function saveHistory() {
+            localStorage.setItem("ai_chat_history", JSON.stringify(chatHistory));
+        }
+
+        function clearHistory() {
+            if (confirm("क्या आप चैट मिटाना चाहते हैं?")) {
+                localStorage.removeItem("ai_chat_history");
+                chatHistory = [];
+                document.getElementById("chatbox").innerHTML = "";
+                appendMessage("चैट मिटा दी गई है। आदेश दीजिए मालिक!", "ai");
+            }
+        }
+    </script>
+</body>
+</html>
